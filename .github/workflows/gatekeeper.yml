@@ -1,0 +1,42 @@
+name: Security Gatekeeper Pipeline
+
+on:
+  push:
+    branches: ["main", "vulnerable"]
+  workflow_dispatch:
+
+jobs:
+  build-scan-push:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Code auschecken
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Bei ACR anmelden
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ secrets.ACR_LOGIN_SERVER }}
+          username: ${{ secrets.ACR_USERNAME }}
+          password: ${{ secrets.ACR_PASSWORD }}
+
+      - name: Docker-Image erstellen
+        run: |
+          docker build -t ${{ secrets.ACR_LOGIN_SERVER }}/vulnerable-app:${{ github.sha }} .
+
+      - name: Trivy-Sicherheitsscan ausfuehren
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          image-ref: '${{ secrets.ACR_LOGIN_SERVER }}/vulnerable-app:${{ github.sha }}'
+          format: 'table'
+          exit-code: '1'
+          severity: 'CRITICAL'
+          ignore-unfixed: true
+
+      - name: Image in ACR hochladen
+        if: success()
+        run: |
+          docker push ${{ secrets.ACR_LOGIN_SERVER }}/vulnerable-app:${{ github.sha }}
+          echo "Erfolg! Image an Azure uebertragen."
